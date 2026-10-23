@@ -106,17 +106,22 @@ def _planned(args: argparse.Namespace, project: Project):
 # -- commands ------------------------------------------------------------------------
 
 
-def cmd_init(args: argparse.Namespace) -> int:
-    dest = Path(args.dir)
+def init_project(dest: Path, example: str = "starter") -> list[Path]:
+    """Copy a bundled example into dest. Raises CliError rather than overwrite anything."""
     if (dest / "voicebake.toml").exists():
         raise CliError(f"{dest / 'voicebake.toml'} already exists; not overwriting")
-    src = resources.files("qwen_voicebake").joinpath("templates", args.example)
+    src = resources.files("qwen_voicebake").joinpath("templates", example)
     if not src.is_dir():
-        raise CliError(f"unknown example '{args.example}'")
+        raise CliError(f"unknown example '{example}'")
     existing = [p for p in _walk_names(src) if (dest / p).exists()]
     if existing:
         raise CliError(f"would overwrite: {', '.join(existing)}")
-    written = _copy_tree(src, dest)
+    return _copy_tree(src, dest)
+
+
+def cmd_init(args: argparse.Namespace) -> int:
+    dest = Path(args.dir)
+    written = init_project(dest, args.example)
     print(f"created {len(written)} files in {dest.resolve()}")
     print("next: cd there, then run `voicebake check` and `voicebake bake --dry-run`")
     return EXIT_OK

@@ -1,8 +1,9 @@
 extends Node
 ## Plays one baked line through VoiceBank.
 ##
-## Bake the starter project into this folder first (set paths.out = "<this folder>/voice"),
-## then run the scene. The voice and line id below come from the starter example.
+## Bake the starter project into godot/voice first (res://voice in this project; set
+## paths.out in voicebake.toml to that folder), then run the scene.
+## The voice and line id below come from the starter example.
 
 const VoiceBankScript := preload("res://addons/voicebake/voice_bank.gd")
 const MANIFEST := "res://voice/manifest.json"

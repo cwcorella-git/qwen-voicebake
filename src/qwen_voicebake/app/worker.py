@@ -27,6 +27,8 @@ class Job:
     done: threading.Event = field(default_factory=threading.Event)
     result: dict[str, Any] | None = None
     error: str | None = None
+    started: bool = False
+    cancelled: bool = False
 
 
 class EngineWorker(QObject):
@@ -84,7 +86,14 @@ class EngineWorker(QObject):
         """Enqueue a job and block until it finishes (for the HTTP server thread)."""
         job = self._enqueue(kind, payload)
         if not job.done.wait(timeout):
-            return {"ok": False, "error": "timed out waiting for the engine"}
+            with self._lock:
+                if not job.started:
+                    job.cancelled = True  # still queued: the worker loop skips it
+                    return {"ok": False, "error": "timed out waiting for the engine; cancelled"}
+            return {
+                "ok": False,
+                "error": "timed out; the line may still finish and appear in the manifest",
+            }
         if job.error is not None:
             return {"ok": False, "error": job.error}
         return job.result or {}
@@ -132,6 +141,16 @@ class EngineWorker(QObject):
             job = self._queue.get()
             if job is None:
                 break
+            with self._lock:
+                if job.cancelled:
+                    skip = True
+                else:
+                    job.started = True
+                    skip = False
+            if skip:
+                job.error = "cancelled"
+                job.done.set()
+                continue
             self._cancel.clear()
             self._set_busy(True)
             self.job_started.emit(job.reply_id, job.kind)

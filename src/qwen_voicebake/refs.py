@@ -168,6 +168,7 @@ def ensure_refs(
             continue
         if status == "pinned" or (status in ("ok", "modified") and not force):
             continue
+        had_file = ref_path(project, vname, tone).is_file()
         try:
             res, wav = _design_ref(engine, project, voice, tone_text, voice.seed)
             qa = qa_check(wav, res.sr, voice.ref_text, "speech", project.qa)
@@ -180,6 +181,20 @@ def ensure_refs(
                 raise RuntimeError("rejected: " + ", ".join(qa.reasons))
             write_audio(ref_path(project, vname, tone), wav, res.sr, REF_FORMAT)
         except Exception as e:  # noqa: BLE001 - one bad reference must not stop the bake
+            if had_file:
+                # The previous reference file is untouched; keep cloning from it.
+                on_event(
+                    {
+                        "type": "warn",
+                        "route": "design",
+                        "voice": vname,
+                        "tone": tone,
+                        "failed": False,
+                        "msg": "reference regeneration failed, kept previous reference: "
+                        f"{type(e).__name__}: {e}",
+                    }
+                )
+                continue
             if failed is not None:
                 failed.append((vname, tone))
             on_event(

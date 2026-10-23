@@ -4,7 +4,7 @@ Three voices, twelve lines (two vocal, one with a direction) and one custom tone
 
     voicebake check
     voicebake bake --dry-run
-    voicebake bake --fake      # placeholder audio, no GPU needed
+    voicebake bake --fake      # placeholder audio, runs on CPU
     voicebake bake             # real synthesis; needs the tts extra and a GPU
 
 Edit voices.json and lines.json, or run `voicebake-app`. Output goes to voice/.

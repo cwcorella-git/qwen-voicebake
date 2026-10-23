@@ -273,3 +273,24 @@ def test_regenerate_refuses_paths_outside_out(project_dir):
     assert engine.calls == []
     assert not (project_dir / "up_clone.ogg").exists()
     assert Baker(engine, project).regenerate("ok_line").ok
+
+
+def test_failed_force_regen_keeps_previous_ref(bake_project):
+    _bake(bake_project)
+    rp = ref_path(bake_project, "clerk", "nervous")
+    before = rp.read_bytes()
+
+    class Boom(FakeEngine):
+        def design(self, text, *a, **k):
+            if text == "Good morning to you.":
+                raise RuntimeError("out of memory")
+            return super().design(text, *a, **k)
+
+    s, _, events = _bake(bake_project, Boom(), force=True, force_refs=True)
+    assert rp.read_bytes() == before
+    assert "c_hi" not in s.failed and "c_hi" in s.baked
+    warns = [e for e in events if e["type"] == "warn" and e.get("voice") == "clerk"]
+    assert warns and "kept previous reference" in warns[0]["msg"]
+    assert not any(e.get("failed") for e in warns)
+    led = Ledger.for_root(bake_project.root)
+    assert led.takes["clerk/c_hi.ogg"].get("error") is None

@@ -168,6 +168,9 @@ def _print_event(e: dict[str, Any]) -> None:
 def cmd_bake(args: argparse.Namespace) -> int:
     from .bake import Baker
 
+    if args.fake and args.dry_run:
+        _err("--fake has no effect with --dry-run (a dry run uses no engine); drop one of them")
+        return EXIT_USAGE
     project = _open_project(args)
     _, errors, _ = _run_check(project)
     if errors:

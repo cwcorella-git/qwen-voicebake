@@ -12,7 +12,7 @@ It has three parts:
   clips, and baking.
 - A Godot 4.3+ addon with an editor dock and a `VoiceBank` node for playing lines at runtime.
 
-<img src="docs/images/lines.png" width="960" alt="The Lines tab of the desktop app">
+<img src="https://raw.githubusercontent.com/cwcorella-git/qwen-voicebake/main/docs/images/lines.png" width="960" alt="The Lines tab of the desktop app">
 
 ## How it works
 
@@ -59,7 +59,7 @@ voices.json        lines.json         tones (built-in + tones.toml)
 | [Qwen/Qwen3-TTS-12Hz-1.7B-Base](https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-Base) | cloning (default) | 1.7B |
 | [Qwen/Qwen3-TTS-12Hz-0.6B-Base](https://huggingface.co/Qwen/Qwen3-TTS-12Hz-0.6B-Base) | cloning, smaller and faster | 0.6B |
 
-VoiceDesign only exists at 1.7B. There is no 0.6B VoiceDesign model.
+VoiceDesign only exists at 1.7B.
 
 The models are made by the Qwen team at Alibaba and released under the Apache-2.0 license.
 qwen-voicebake runs them through the `qwen-tts` package (also Apache-2.0). The weights are
@@ -71,7 +71,7 @@ Portuguese, Spanish, Italian.
 
 ## Hardware and platforms
 
-- **Linux and Windows with an NVIDIA GPU (CUDA):** supported. A 12 GB card holds one 1.7B
+- **Linux and Windows with an NVIDIA GPU (CUDA):** supported. In our test a 12 GB card held one 1.7B
   model at a time, so qwen-voicebake keeps one model loaded and swaps when needed.
 - **macOS:** experimental. It runs on `mps` and falls back to `cpu` if `mps` fails. Expect
   it to be slow.
@@ -370,7 +370,7 @@ port = 47811
 | `engine.vocal_max_new_tokens` | Upper limit for vocal lines, which keeps them short. |
 | `paths.voices` | Voices file. |
 | `paths.lines` | Lines file, `.json` or `.csv`. |
-| `paths.scanner` | Optional Python scanner script. When set, it replaces the lines file. |
+| `paths.scanner` | Optional Python scanner script. When set, it replaces the lines file. It is Python code that runs whenever the project is opened or checked, so only open projects you trust. |
 | `paths.tones` | Project tones file. Optional. |
 | `paths.refs` | Folder for reference clips. |
 | `paths.out` | Output folder for baked lines and `manifest.json`. |
@@ -436,12 +436,12 @@ the project opens read-only.
 
 <table>
 <tr>
-<td><img src="docs/images/welcome.png" width="460" alt="Start screen"></td>
-<td><img src="docs/images/voices.png" width="460" alt="Voices tab"></td>
+<td><img src="https://raw.githubusercontent.com/cwcorella-git/qwen-voicebake/main/docs/images/welcome.png" width="460" alt="Start screen"></td>
+<td><img src="https://raw.githubusercontent.com/cwcorella-git/qwen-voicebake/main/docs/images/voices.png" width="460" alt="Voices tab"></td>
 </tr>
 <tr>
-<td><img src="docs/images/references.png" width="460" alt="References tab"></td>
-<td><img src="docs/images/bake.png" width="460" alt="Bake tab"></td>
+<td><img src="https://raw.githubusercontent.com/cwcorella-git/qwen-voicebake/main/docs/images/references.png" width="460" alt="References tab"></td>
+<td><img src="https://raw.githubusercontent.com/cwcorella-git/qwen-voicebake/main/docs/images/bake.png" width="460" alt="Bake tab"></td>
 </tr>
 </table>
 
@@ -473,8 +473,8 @@ readable only by your user. It is deleted when the app closes. Add `.voicebake-s
 to your `.gitignore`.
 
 Every request must send `Authorization: Bearer <token>` and a `Host` of
-`127.0.0.1:<port>` or `localhost:<port>`. Requests with an `Origin` header are refused, so
-web pages cannot call it.
+`127.0.0.1:<port>` or `localhost:<port>`. Requests with an `Origin` header are refused, which
+blocks requests made by web pages in a browser.
 
 | Request | Response |
 |---|---|
@@ -483,7 +483,10 @@ web pages cannot call it.
 | `POST /regenerate` with `{"line_id": "...", "seed": 7}` (`seed` optional) | `{ok, path, rel, route, qa, duration}` or `{ok: false, error}` |
 
 `POST` bodies must be `Content-Type: application/json`. `/regenerate` waits for the line
-to finish, up to 300 seconds. It rebakes one line from the saved project files, designs its
+to finish, up to 300 seconds. On timeout, a job still waiting in the queue is cancelled and
+the response is an `{ok: false, error}` saying so. A job that is already running is not
+interrupted: the response is `{"ok": false, "error": "timed out; the line may still finish
+and appear in the manifest"}`. It rebakes one line from the saved project files, designs its
 reference first if needed, and updates the manifest.
 
 ```
@@ -535,6 +538,9 @@ files/folders". The audio files export normally.
 If your lines live in your game's scripts or data files, a scanner script can read them
 so you do not keep a separate `lines.json`. Set `scanner = "tools/my_scanner.py"` under
 `[paths]`. The contract and an example are in [docs/SCANNERS.md](docs/SCANNERS.md).
+
+A scanner is Python code that runs whenever the project is opened or checked. Only open
+projects you trust.
 
 ## Troubleshooting
 

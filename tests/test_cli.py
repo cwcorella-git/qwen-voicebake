@@ -208,3 +208,8 @@ def test_bake_help_documents_exit_codes(capsys):
     with pytest.raises(SystemExit):
         cli.main(["bake", "--help"])
     assert "failed" in capsys.readouterr().out
+
+
+def test_bake_fake_with_dry_run_is_usage_error(starter: Path, capsys):
+    assert cli.main(["bake", "--fake", "--dry-run", "--project", str(starter)]) == 2
+    assert "--fake" in capsys.readouterr().err

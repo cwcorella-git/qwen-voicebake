@@ -52,6 +52,7 @@ STATE_TIPS = {
 }
 COL_STATE = 6
 COL_TEXT = 5
+TIP_COLUMNS = (0, 2, 4, COL_TEXT)  # columns whose full text may be cut off
 
 Index = QModelIndex | QPersistentModelIndex
 
@@ -100,8 +101,8 @@ class LinesModel(QAbstractTableModel):
             return None
         if role in (Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.EditRole):
             return getattr(line, FIELDS[col])
-        if role == Qt.ItemDataRole.ToolTipRole and col == COL_TEXT:
-            return line.text
+        if role == Qt.ItemDataRole.ToolTipRole and col in TIP_COLUMNS:
+            return getattr(line, FIELDS[col]) or None
         return None
 
     def flags(self, index: Index) -> Qt.ItemFlag:

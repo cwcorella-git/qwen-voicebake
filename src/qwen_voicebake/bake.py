@@ -15,10 +15,12 @@ from .planner import Job, Plan, expected_take_hash, route_for
 from .post import EmptyAudioError, postprocess, write_audio
 from .qa import qa_check
 from .refs import ensure_refs, ref_path
+from .schema import ID_RE
 
 if TYPE_CHECKING:
     from .config import Project
     from .engine.base import AudioResult, Engine
+    from .schema import Line
 
 Event = Callable[[dict[str, Any]], None]
 
@@ -65,6 +67,22 @@ class Baker:
     @property
     def rejected_dir(self) -> Path:
         return self.project.state_dir / "rejected"
+
+    def unsafe_reason(self, line: Line) -> str | None:
+        """Why a line must not be written, or None. Guards against ids or voice names that
+        would put files outside the output folder (for example "..")."""
+        if not ID_RE.match(line.id) or not ID_RE.match(line.voice) or not ID_RE.match(line.tone):
+            return "invalid id, voice or tone name"
+        out_dir = self.project.paths.out.resolve()
+        target = (out_dir / take_rel(line, self.project.paths.format)).resolve()
+        if not target.is_relative_to(out_dir) or target.parent == out_dir:
+            return "output path is outside the output folder"
+        if route_for(line) == "clone":
+            refs_dir = self.project.paths.refs.resolve()
+            ref = ref_path(self.project, line.voice, line.tone).resolve()
+            if not ref.is_relative_to(refs_dir) or ref.parent == refs_dir:
+                return "reference path is outside the references folder"
+        return None
 
     # -- one take ---------------------------------------------------------------
 
@@ -195,9 +213,13 @@ class Baker:
             raise ValueError("an engine is needed unless dry_run is set")
 
         ledger = Ledger.for_root(self.project.root)
+        unsafe = {j.line.id: r for j in jobs if (r := self.unsafe_reason(j.line))}
         design = [j for j in jobs if j.route == "design"]
         clone = [j for j in jobs if j.route == "clone"]
-        pairs = [p for p in plan.ref_pairs if any((j.voice.name, j.line.tone) == p for j in clone)]
+        safe_clone = [j for j in clone if j.line.id not in unsafe]
+        pairs = [
+            p for p in plan.ref_pairs if any((j.voice.name, j.line.tone) == p for j in safe_clone)
+        ]
         total = len(jobs)
         done = 0
         failed_refs: list[tuple[str, str]] = []
@@ -219,6 +241,11 @@ class Baker:
                     s.cancelled = True
                     break
                 done += 1
+                if job.line.id in unsafe:
+                    res = TakeResult(job.line.id, job.route, False, error=unsafe[job.line.id])
+                    s.failed.append(job.line.id)
+                    self._emit_take(res, done, total)
+                    continue
                 h = expected_take_hash(self.project, job.line, job.voice, job.tone_text, job.route)
                 if job.route == "clone" and (job.voice.name, job.line.tone) in failed_refs:
                     h = None
@@ -261,8 +288,13 @@ class Baker:
         line = next((ln for ln in lines if ln.id == line_id), None)
         if line is None:
             raise KeyError(f"unknown line '{line_id}'")
-        voice = voices[line.voice]
         route = route_for(line)
+        reason = self.unsafe_reason(line)
+        if reason is not None:
+            res = TakeResult(line.id, route, False, error=reason)
+            self._emit_take(res, 1, 1)
+            return res
+        voice = voices[line.voice]
         fmt = self.project.paths.format
         max_tokens = (
             self.project.engine.vocal_max_new_tokens

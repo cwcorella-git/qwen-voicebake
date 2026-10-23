@@ -214,3 +214,62 @@ def test_clone_prompt_cache_cleared_on_model_change(bake_project):
     write_lines(bake_project.root, lines)
     baker.run(_plan(bake_project))
     assert Counting.prompts == 2
+
+
+def _escape_project(project_dir):
+    voices = {
+        "version": 1,
+        "voices": {
+            "mech": {"instruct": "A gruff man.", "ref_text": "Hello there friend."},
+            "..": {"instruct": "Sneaky.", "ref_text": "Hello there friend."},
+            ".": {"instruct": "Sneaky.", "ref_text": "Hello there friend."},
+        },
+    }
+    (project_dir / "voices.json").write_text(json.dumps(voices), encoding="utf-8")
+    write_lines(
+        project_dir,
+        [
+            {"id": "ok_line", "voice": "mech", "tone": "warm", "text": "Back again, are you?"},
+            {"id": "up_clone", "voice": "..", "tone": "warm", "text": "Out we go now."},
+            {"id": "up_vocal", "voice": "..", "tone": "neutral", "text": "Hah!", "kind": "vocal"},
+            {"id": "here", "voice": ".", "tone": "warm", "text": "Right next to it."},
+        ],
+    )
+    from qwen_voicebake.config import load_project
+
+    return load_project(project_dir)
+
+
+def _stray_audio(project, root):
+    """Audio files under root that are not in the output, refs or state folders."""
+    allowed = [project.paths.out.resolve(), project.paths.refs.resolve(), project.state_dir]
+    return [
+        p
+        for p in root.rglob("*.ogg")
+        if not any(p.resolve().is_relative_to(a.resolve()) for a in allowed)
+    ]
+
+
+def test_run_refuses_paths_outside_out(project_dir):
+    project = _escape_project(project_dir)
+    s, _, events = _bake(project)
+    assert s.baked == ["ok_line"]
+    assert sorted(s.failed) == ["here", "up_clone", "up_vocal"]
+    errors = {ev["line_id"]: ev["error"] for ev in events if ev["type"] == "take" and not ev["ok"]}
+    assert all("outside" in e or "invalid" in e for e in errors.values())
+    assert _stray_audio(project, project_dir) == []
+    assert list(project_dir.parent.glob("*.ogg")) == []
+    assert not (project_dir / "up_clone.ogg").exists()
+    assert not (project.paths.out / "here.ogg").exists()
+    # no reference was designed for the escaping voices either
+    assert not any(p.name == "warm.ogg" and p.parent.name != "mech" for p in project_dir.rglob("*"))
+
+
+def test_regenerate_refuses_paths_outside_out(project_dir):
+    project = _escape_project(project_dir)
+    engine = FakeEngine()
+    res = Baker(engine, project).regenerate("up_clone")
+    assert not res.ok and "outside" in res.error
+    assert engine.calls == []
+    assert not (project_dir / "up_clone.ogg").exists()
+    assert Baker(engine, project).regenerate("ok_line").ok

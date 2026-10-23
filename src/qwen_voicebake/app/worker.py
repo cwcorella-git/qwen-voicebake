@@ -12,7 +12,7 @@ import threading
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
-from PySide6.QtCore import QObject, QThread, Signal
+from PySide6.QtCore import QObject, QThread, QTimer, Signal
 
 from ..config import Project
 
@@ -62,11 +62,20 @@ class EngineWorker(QObject):
     def start(self) -> None:
         self._thread.start()
 
-    def stop(self, timeout_ms: int = 10000) -> None:
+    def stop_async(self) -> None:
+        """Ask the thread to end after the current job (the cancel flag stops a bake early)."""
         self._cancel.set()
         self._queue.put(None)
-        self._thread.quit()
-        self._thread.wait(timeout_ms)
+
+    def wait(self, timeout_ms: int) -> bool:
+        """True once the worker thread has ended."""
+        return self._thread.wait(timeout_ms)
+
+    def stop(self) -> None:
+        """Stop and block until the thread has ended. There is no timeout on purpose: the
+        project lock must not be released while a take is still being written."""
+        self.stop_async()
+        self._thread.wait()
 
     def submit(self, kind: str, payload: dict[str, Any] | None = None) -> int:
         return self._enqueue(kind, payload).reply_id
@@ -140,6 +149,8 @@ class EngineWorker(QObject):
             if self._queue.empty():
                 self._set_busy(False)
         self._set_busy(False)
+        # Runs before the thread's event loop starts; the posted quit ends it right away.
+        QTimer.singleShot(0, self._thread.quit)
 
     def _set_busy(self, value: bool) -> None:
         if value != self._busy:

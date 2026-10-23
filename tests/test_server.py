@@ -1,5 +1,7 @@
 import json
+import os
 import shutil
+import stat
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -12,18 +14,20 @@ from qwen_voicebake.config import load_project
 STARTER = Path(__file__).resolve().parents[1] / "examples" / "starter"
 
 
-def _get(port: int, path: str):
-    with urllib.request.urlopen(f"http://127.0.0.1:{port}{path}", timeout=5) as r:
-        return r.status, json.loads(r.read())
+TOKEN = "test-token"
 
 
-def _post(port: int, path: str, body: bytes):
-    req = urllib.request.Request(
-        f"http://127.0.0.1:{port}{path}",
-        data=body,
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
+def _request(port, path, body=None, headers=None, token=TOKEN, method=None):
+    h = {"Host": f"127.0.0.1:{port}"}
+    if token is not None:
+        h["Authorization"] = f"Bearer {token}"
+    if body is not None:
+        h["Content-Type"] = "application/json"
+    h.update(headers or {})
+    h = {k: v for k, v in h.items() if v is not None}
+    req = urllib.request.Request(f"http://127.0.0.1:{port}{path}", data=body, headers=h)
+    if method:
+        req.method = method
     try:
         with urllib.request.urlopen(req, timeout=5) as r:
             return r.status, json.loads(r.read())
@@ -31,8 +35,16 @@ def _post(port: int, path: str, body: bytes):
         return e.code, json.loads(e.read())
 
 
+def _get(port, path, **kw):
+    return _request(port, path, **kw)
+
+
+def _post(port, path, body, **kw):
+    return _request(port, path, body=body, **kw)
+
+
 @pytest.fixture
-def server():
+def server(tmp_path):
     calls = []
 
     def submit(line_id, seed):
@@ -46,6 +58,8 @@ def server():
         lambda: {"project": "p", "model": "", "device": "", "busy": False, "queued": 0},
         lambda: [{"id": "a", "voice": "v", "tone": "warm", "state": "new", "path": None}],
         submit,
+        token=TOKEN,
+        session_dir=tmp_path / "out",
     )
     srv.calls = calls
     yield srv
@@ -60,9 +74,8 @@ def test_status_and_lines(server):
 
 
 def test_unknown_path_is_404(server):
-    with pytest.raises(urllib.error.HTTPError) as e:
-        _get(server.port, "/nope")
-    assert e.value.code == 404
+    code, _ = _get(server.port, "/nope")
+    assert code == 404
 
 
 def test_regenerate_passes_line_and_seed(server):
@@ -74,7 +87,15 @@ def test_regenerate_passes_line_and_seed(server):
 
 @pytest.mark.parametrize(
     "body",
-    [b"not json", b"{}", b'{"line_id": ""}', b'{"line_id": "a", "seed": "3"}', b"[1]"],
+    [
+        b"not json",
+        b"{}",
+        b'{"line_id": ""}',
+        b'{"line_id": "a", "seed": "3"}',
+        b"[1]",
+        b'{"line_id": "../evil"}',
+        b'{"line_id": "a/b"}',
+    ],
 )
 def test_regenerate_rejects_bad_bodies(server, body):
     code, out = _post(server.port, "/regenerate", body)
@@ -98,3 +119,65 @@ def test_lines_from_disk(tmp_path):
     assert len(rows) == 12
     assert {r["state"] for r in rows} == {"new"}
     assert all(r["path"] is None for r in rows)
+
+
+@pytest.mark.parametrize("path", ["/status", "/lines"])
+def test_get_requires_token(server, path):
+    assert _get(server.port, path, token=None)[0] == 401
+    assert _get(server.port, path, token="wrong")[0] == 401
+
+
+def test_post_requires_token(server):
+    code, out = _post(server.port, "/regenerate", b'{"line_id": "a"}', token="nope")
+    assert code == 401 and out["ok"] is False
+    assert server.calls == []
+
+
+@pytest.mark.parametrize("host", ["evil.example:80", "127.0.0.1", "localhost:1"])
+def test_rejects_foreign_host(server, host):
+    code, out = _get(server.port, "/status", headers={"Host": host})
+    assert code == 403 and out["ok"] is False
+
+
+def test_accepts_localhost_host(server):
+    code, _ = _get(server.port, "/status", headers={"Host": f"localhost:{server.port}"})
+    assert code == 200
+
+
+def test_rejects_any_origin(server):
+    code, _ = _get(server.port, "/status", headers={"Origin": "http://127.0.0.1"})
+    assert code == 403
+    code, _ = _post(server.port, "/regenerate", b'{"line_id": "a"}', headers={"Origin": "null"})
+    assert code == 403
+    assert server.calls == []
+
+
+def test_post_requires_json_content_type(server):
+    code, out = _post(
+        server.port, "/regenerate", b'{"line_id": "a"}', headers={"Content-Type": "text/plain"}
+    )
+    assert code == 415 and out["ok"] is False
+    assert server.calls == []
+
+
+def test_session_file_written_and_removed(tmp_path):
+    srv = start_server(0, dict, list, lambda *_: {}, session_dir=tmp_path / "out")
+    f = tmp_path / "out" / ".voicebake-session"
+    data = json.loads(f.read_text(encoding="utf-8"))
+    assert data == {"port": srv.port, "token": srv.token}
+    assert len(srv.token) >= 40
+    if os.name == "posix":
+        assert stat.S_IMODE(f.stat().st_mode) == 0o600
+    assert _get(srv.port, "/status", token=srv.token)[0] == 200
+    srv.stop()
+    assert not f.exists()
+
+
+def test_tokens_differ_per_session(tmp_path):
+    a = start_server(0, dict, list, lambda *_: {})
+    b = start_server(0, dict, list, lambda *_: {})
+    try:
+        assert a.token != b.token
+    finally:
+        a.stop()
+        b.stop()

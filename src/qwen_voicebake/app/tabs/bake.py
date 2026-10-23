@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QFontDatabase
 from PySide6.QtWidgets import (
     QGroupBox,
     QHBoxLayout,
@@ -61,6 +62,7 @@ class BakeTab(QWidget):
         self.log.setReadOnly(True)
         self.log.setPlaceholderText("Bake output appears here.")
         self.log.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
+        self.log.setFont(QFontDatabase.systemFont(QFontDatabase.SystemFont.FixedFont))
         log_box = QGroupBox("Log")
         QVBoxLayout(log_box).addWidget(self.log)
 
@@ -172,10 +174,10 @@ class BakeTab(QWidget):
         kind = e.get("type")
         if kind == "ref":
             where = f"{e['voice']}/{e['tone']}"
-            self._append(f"{where}  reference via design  {e.get('duration', 0):.2f} s")
+            self._append(f"{where:<28} {'reference':<10} {e.get('duration', 0):6.2f} s")
         elif kind == "warn":
             where = f"{e.get('voice', '')}/{e.get('tone', '')}"
-            self._append(f"{where}  warning: {e.get('msg', '')}")
+            self._append(f"{where:<28} {'warning':<10} {e.get('msg', '')}")
             self.add_issue("failed" if e.get("failed") else "warning", where, e.get("msg", ""))
         elif kind == "take":
             lid = e["line_id"]
@@ -184,9 +186,9 @@ class BakeTab(QWidget):
                 if e.get("qa") == "soft":
                     note = "  (check: " + ", ".join(e.get("reasons", [])) + ")"
                     self.add_issue("soft", lid, ", ".join(e.get("reasons", [])), e.get("path", ""))
-                self._append(f"{lid}  via {e['route']}  {e['duration']:.2f} s{note}")
+                self._append(f"{lid:<28} {e['route']:<10} {e['duration']:6.2f} s{note}")
             else:
-                self._append(f"{lid}  via {e['route']}  failed: {e.get('error', '')}")
+                self._append(f"{lid:<28} {e['route']:<10} failed: {e.get('error', '')}")
                 level = "hard" if e.get("qa") == "hard" else "failed"
                 self.add_issue(level, lid, e.get("error", ""))
         elif kind == "info":

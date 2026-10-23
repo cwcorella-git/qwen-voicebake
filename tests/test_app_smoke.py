@@ -2,6 +2,7 @@ import json
 import os
 import shutil
 import time
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -122,13 +123,24 @@ def test_human_take_toggle(qtbot, window, starter):
 
 def test_server_regenerate(qtbot, window, starter):
     win = window
-    port = win.server.port
-    with urllib.request.urlopen(f"http://127.0.0.1:{port}/status", timeout=5) as r:
+    session = json.loads((starter / "voice" / ".voicebake-session").read_text(encoding="utf-8"))
+    port = session["port"]
+    assert port == win.server.port
+    auth = {"Authorization": f"Bearer {session['token']}"}
+
+    req = urllib.request.Request(f"http://127.0.0.1:{port}/status")
+    with pytest.raises(urllib.error.HTTPError) as e:
+        urllib.request.urlopen(req, timeout=5)
+    assert e.value.code == 401
+
+    req = urllib.request.Request(f"http://127.0.0.1:{port}/status", headers=auth)
+    with urllib.request.urlopen(req, timeout=5) as r:
         status = json.loads(r.read())
     assert status["project"] == str(starter.resolve())
     req = urllib.request.Request(
         f"http://127.0.0.1:{port}/regenerate",
         data=b'{"line_id": "ann_dock_01"}',
+        headers={**auth, "Content-Type": "application/json"},
         method="POST",
     )
     with urllib.request.urlopen(req, timeout=60) as r:
@@ -136,6 +148,37 @@ def test_server_regenerate(qtbot, window, starter):
     assert out["ok"] is True and out["rel"] == "announcer/ann_dock_01.ogg"
     assert Path(out["path"]).is_file()
     qtbot.waitUntil(lambda: win.session.states.get("ann_dock_01") == "ok", timeout=10000)
+    # the Bake tab label only reflects bakes; this result went to the status bar
+    assert win.bake_tab.stage.text() == "Ready."
+    assert "ann_dock_01" in win.statusBar().currentMessage()
+
+    win._close_project()
+    assert not (starter / "voice" / ".voicebake-session").exists()
+
+
+def test_close_waits_for_running_take(qtbot, window, starter, monkeypatch):
+    win = window
+    import qwen_voicebake.bake as bake_mod
+
+    real_take = bake_mod.Baker._take
+
+    def slow_take(self, *a, **k):
+        time.sleep(0.3)
+        return real_take(self, *a, **k)
+
+    monkeypatch.setattr(bake_mod.Baker, "_take", slow_take)
+    worker = win.worker
+    win.bake_changed()
+    qtbot.waitUntil(lambda: worker.busy, timeout=5000)
+    qtbot.wait(400)
+    win._close_project()
+    # the thread has ended and nothing is still writing when the lock goes away
+    assert worker._thread.isFinished()
+    assert not (starter / ".voicebake" / "lock").exists()
+    ledger = json.loads((starter / ".voicebake" / "ledger.json").read_text(encoding="utf-8"))
+    for rel in ledger["takes"]:
+        assert (starter / "voice" / rel).is_file()
+    assert win.worker is None
 
 
 def test_read_only_when_locked(qtbot, starter, monkeypatch):

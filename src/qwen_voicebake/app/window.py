@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QMainWindow,
     QMessageBox,
+    QProgressDialog,
     QPushButton,
     QStackedWidget,
     QTabWidget,
@@ -32,6 +33,7 @@ from .tabs.refs import RefsTab
 from .tabs.voices import VoicesTab
 
 APP_NAME = "Voicebake"
+SERVER_TIP = "Local port for editor integrations (Godot addon)"
 
 
 class MainWindow(QMainWindow):
@@ -44,6 +46,7 @@ class MainWindow(QMainWindow):
         self.server: Any = None
         self.lock: Any = None
         self._busy = False
+        self._current_kind = ""
         self._job_titles: dict[int, str] = {}
         self._status_lock = threading.Lock()
         self._status: dict[str, Any] = {}
@@ -182,9 +185,7 @@ class MainWindow(QMainWindow):
         self.sb_server = QLabel()
         self.sb_device.setToolTip("Where the speech model runs.")
         self.sb_model.setToolTip("The model loaded right now. Loading happens on first use.")
-        self.sb_server.setToolTip(
-            "Local address editor plugins use to ask for a line to be baked again."
-        )
+        self.sb_server.setToolTip(SERVER_TIP)
         for w in (self.sb_changed, self.sb_model, self.sb_device, self.sb_server):
             w.setContentsMargins(8, 0, 8, 0)
             sb.addPermanentWidget(w)
@@ -285,7 +286,7 @@ class MainWindow(QMainWindow):
 
             self.worker = EngineWorker(project, fake=self.fake)
             self.worker.event.connect(self._on_event)
-            self.worker.progress.connect(self.bake_tab.set_progress)
+            self.worker.progress.connect(self._on_progress)
             self.worker.job_started.connect(self._job_started)
             self.worker.job_done.connect(self._job_done)
             self.worker.job_failed.connect(self._job_failed)
@@ -323,13 +324,20 @@ class MainWindow(QMainWindow):
 
         try:
             self.server = start_server(
-                project.app.port, status, lambda: lines_from_disk(project), submit
+                project.app.port,
+                status,
+                lambda: lines_from_disk(project),
+                submit,
+                session_dir=project.paths.out,
             )
             self.sb_server.setText(f"Server: 127.0.0.1:{self.server.port}")
+            self.sb_server.setToolTip(SERVER_TIP)
         except OSError as e:
             self.server = None
             self.sb_server.setText("Server: off")
-            self.sb_server.setToolTip(f"Port {project.app.port} could not be used: {e}")
+            self.sb_server.setToolTip(
+                f"{SERVER_TIP}. Port {project.app.port} could not be used: {e}"
+            )
 
     def _publish_status(self) -> None:
         project = self.session.project
@@ -341,13 +349,31 @@ class MainWindow(QMainWindow):
             }
 
     def _close_project(self) -> None:
-        if self.worker is not None:
-            self.worker.cancel()
-            self.worker.stop()
-            self.worker = None
+        # Stop the server first so no new jobs arrive, then let the worker finish the line it
+        # is on. The lock is released only after the worker thread has ended.
         if self.server is not None:
             self.server.stop()
             self.server = None
+        if self.worker is not None:
+            self.worker.cancel()
+            if self.worker.busy:
+                self.statusBar().showMessage("Finishing current line...")
+                dlg = QProgressDialog("Finishing current line...", "", 0, 0, self)
+                dlg.setWindowTitle(APP_NAME)
+                dlg.setCancelButton(None)
+                dlg.setWindowModality(Qt.WindowModality.ApplicationModal)
+                dlg.setMinimumDuration(0)
+                dlg.show()
+                self.worker.stop_async()
+                while not self.worker.wait(50):
+                    QApplication.processEvents()
+                dlg.close()
+                self.statusBar().clearMessage()
+            else:
+                self.worker.stop_async()
+                while not self.worker.wait(50):
+                    QApplication.processEvents()
+            self.worker = None
         if self.lock is not None:
             self.lock.release()
             self.lock = None
@@ -465,7 +491,6 @@ class MainWindow(QMainWindow):
         if not self._prepare_run():
             return
         self._submit("regenerate", {"line_id": line_id}, f"Regenerating {line_id}")
-        self._show_message(f"Regenerating {line_id}...")
 
     def generate_candidates(self, voice: str, tone: str, n: int) -> None:
         if not self._prepare_run():
@@ -475,7 +500,6 @@ class MainWindow(QMainWindow):
             {"voice": voice, "tone": tone, "n": n},
             f"Designing {n} candidates for {voice}/{tone}",
         )
-        self._show_message(f"Designing {n} candidates for {voice}/{tone}...")
 
     def _submit(self, kind: str, payload: dict[str, Any], title: str) -> int:
         reply = self.worker.submit(kind, payload)
@@ -512,8 +536,17 @@ class MainWindow(QMainWindow):
     # -- worker signals ------------------------------------------------------------------
 
     def _job_started(self, reply: int, kind: str) -> None:
+        self._current_kind = kind
         title = self._job_titles.get(reply, "Regenerating a line for an editor request")
-        self.bake_tab.start_run(title)
+        if kind == "bake":
+            self.bake_tab.start_run(title)
+        else:
+            self.bake_tab.log_message(f"-- {title}")
+            self._show_message(title + "...", 0)
+
+    def _on_progress(self, done: int, total: int) -> None:
+        if self._current_kind == "bake":
+            self.bake_tab.set_progress(done, total)
 
     def _on_event(self, e: dict[str, Any]) -> None:
         self.bake_tab.handle_event(e)
@@ -536,15 +569,20 @@ class MainWindow(QMainWindow):
                 if result.get("ok")
                 else f"{result.get('line_id')}: {result.get('error')}"
             )
-        self.bake_tab.finish_run(text, log="summary" not in result)
-        self._show_message(text)
+        if "summary" in result:
+            self.bake_tab.finish_run(text)  # bake state lives on the Bake tab only
+        else:
+            self.bake_tab.log_message(f"-- {text}")
+            self._show_message(text)
         self.session.refresh_states()
 
     def _job_failed(self, reply: int, error: str) -> None:
         self._job_titles.pop(reply, None)
         self.bake_tab.log_message(f"-- Stopped: {error}")
-        self.bake_tab.finish_run("Stopped with an error.")
-        self._show_message(error, 10000)
+        if self._current_kind == "bake":
+            self.bake_tab.finish_run("Stopped with an error.")
+        else:
+            self._show_message(error, 10000)
         self.session.refresh_states()
 
     def _model_changed(self, model: str, device: str) -> None:

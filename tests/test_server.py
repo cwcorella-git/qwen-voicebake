@@ -181,3 +181,40 @@ def test_tokens_differ_per_session(tmp_path):
     finally:
         a.stop()
         b.stop()
+
+
+def test_session_file_uses_private_temp_file(tmp_path, monkeypatch):
+    import tempfile
+
+    made = []
+    real = tempfile.mkstemp
+
+    def spy(*a, **k):
+        made.append(k)
+        return real(*a, **k)
+
+    monkeypatch.setattr(tempfile, "mkstemp", spy)
+    srv = start_server(0, dict, list, lambda *_: {}, session_dir=tmp_path)
+    srv.stop()
+    assert made and made[0]["dir"] == tmp_path and made[0]["prefix"] == ".voicebake-session."
+    assert list(tmp_path.iterdir()) == []  # no temp files left behind
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX permissions")
+def test_server_refuses_to_start_if_session_file_not_private(tmp_path, monkeypatch):
+    from qwen_voicebake.app import server as server_mod
+
+    real_stat = os.stat
+
+    class Loose:
+        def __init__(self, st):
+            self.st_mode = (st.st_mode & ~0o777) | 0o644
+
+    monkeypatch.setattr(
+        server_mod.os,
+        "stat",
+        lambda p, *a, **k: Loose(real_stat(p)) if ".tmp" in str(p) else real_stat(p, *a, **k),
+    )
+    with pytest.raises(server_mod.SessionFileError):
+        start_server(0, dict, list, lambda *_: {}, session_dir=tmp_path)
+    assert list(tmp_path.iterdir()) == []

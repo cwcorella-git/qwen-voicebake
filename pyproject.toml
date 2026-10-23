@@ -21,7 +21,7 @@ tts = ["qwen-tts", "torch"]
 app = ["PySide6>=6.6"]
 loudness = ["pyloudnorm"]
 all = ["qwen-tts", "torch", "PySide6>=6.6", "pyloudnorm"]
-dev = ["pytest", "ruff"]
+dev = ["pytest", "ruff", "pillow"]  # pillow: optional, shrinks docs screenshots
 test-app = ["pytest-qt"]
 
 [project.scripts]

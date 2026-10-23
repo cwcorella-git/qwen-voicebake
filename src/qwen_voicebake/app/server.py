@@ -17,6 +17,8 @@ import hmac
 import json
 import os
 import secrets
+import stat
+import tempfile
 import threading
 from collections.abc import Callable
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -31,6 +33,10 @@ SubmitFn = Callable[[str, "int | None"], dict[str, Any]]
 
 MAX_BODY = 64 * 1024
 SESSION_FILE = ".voicebake-session"
+
+
+class SessionFileError(OSError):
+    """The session file could not be written privately."""
 
 
 def lines_from_disk(project: Any) -> list[dict[str, Any]]:
@@ -165,19 +171,37 @@ class VoicebakeHTTPServer(ThreadingHTTPServer):
         return int(self.server_address[1])
 
     def _write_session_file(self) -> None:
+        """Write port and token to a private file. On POSIX the file must end up mode 0600,
+        otherwise SessionFileError is raised and the server must not run."""
         if self.session_dir is None:
             return
         self.session_dir.mkdir(parents=True, exist_ok=True)
         path = self.session_dir / SESSION_FILE
-        tmp = path.with_name(path.name + f".{os.getpid()}.tmp")
-        fd = os.open(tmp, os.O_CREAT | os.O_WRONLY | os.O_TRUNC, 0o600)
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            json.dump({"port": self.port, "token": self.token}, f)
+        # mkstemp: random name, O_EXCL, mode 0600 from the start.
+        fd, tmp_name = tempfile.mkstemp(
+            dir=self.session_dir, prefix=SESSION_FILE + ".", suffix=".tmp"
+        )
+        tmp = Path(tmp_name)
         try:
-            os.chmod(tmp, 0o600)  # best effort; Windows only honours the read-only bit
-        except OSError:
-            pass
-        os.replace(tmp, path)
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                json.dump({"port": self.port, "token": self.token}, f)
+                f.flush()
+                os.fsync(f.fileno())
+            if os.name == "posix":
+                os.chmod(tmp, 0o600)
+                mode = stat.S_IMODE(os.stat(tmp).st_mode)
+                if mode != 0o600:
+                    raise SessionFileError(
+                        f"{path} would be readable by others (mode {mode:o}); "
+                        "the local server was not started"
+                    )
+            os.replace(tmp, path)
+        except BaseException:
+            try:
+                tmp.unlink()
+            except OSError:
+                pass
+            raise
         self.session_file = path
 
     def start(self) -> None:
@@ -213,5 +237,9 @@ def start_server(
     session_dir (normally paths.out) receives the session file with the port and token.
     """
     srv = VoicebakeHTTPServer(port, status_fn, lines_fn, submit_fn, token, session_dir)
-    srv.start()
+    try:
+        srv.start()
+    except BaseException:
+        srv.server_close()
+        raise
     return srv

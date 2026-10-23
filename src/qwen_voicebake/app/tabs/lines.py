@@ -302,7 +302,8 @@ class LinesTab(QWidget):
         header = self.table.horizontalHeader()
         for col in range(len(COLUMNS)):
             if col != COL_TEXT:
-                header.resizeSection(col, min(header.sectionSize(col) + 12, 200))
+                cap = 130 if col == 4 else 200  # direction is long; the tooltip has it all
+                header.resizeSection(col, min(header.sectionSize(col) + 4, cap))
         header.setSectionResizeMode(COL_TEXT, QHeaderView.ResizeMode.Stretch)
 
     def _update_count(self) -> None:

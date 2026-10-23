@@ -333,8 +333,12 @@ class MainWindow(QMainWindow):
             self.sb_server.setText(f"Server: 127.0.0.1:{self.server.port}")
             self.sb_server.setToolTip(SERVER_TIP)
         except OSError as e:
+            from .server import SessionFileError
+
             self.server = None
             self.sb_server.setText("Server: off")
+            if isinstance(e, SessionFileError):
+                QMessageBox.warning(self, "Editor Integration Off", str(e))
             self.sb_server.setToolTip(
                 f"{SERVER_TIP}. Port {project.app.port} could not be used: {e}"
             )

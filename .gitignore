@@ -10,3 +10,4 @@ dist/
 .superpowers/
 .godot/
 .voicebake-session
+/godot/voice/

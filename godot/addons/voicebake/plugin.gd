@@ -56,5 +56,5 @@ func _poll_manifest() -> void:
 		return
 	_last_mtime = mtime
 	EditorInterface.get_resource_filesystem().scan()
-	if _dock != null and _dock.has_method("refresh"):
+	if is_instance_valid(_dock) and _dock.has_method("refresh"):
 		_dock.call("refresh")

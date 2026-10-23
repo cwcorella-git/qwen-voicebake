@@ -4,7 +4,7 @@ Godot 4.3+ editor plugin and runtime helper for audio baked with VoiceBake.
 
 ## Install
 
-Copy this folder to `res://addons/voicebake/` in your project and enable it under
+Copy this folder (`godot/addons/voicebake` in the repository) to `res://addons/voicebake/` in your project and enable it under
 Project Settings > Plugins. Set the VoiceBake output folder (`paths.out` in
 `voicebake.toml`) to a folder inside your project, normally `res://voice`.
 
@@ -35,6 +35,13 @@ Add this line to your `.gitignore`:
 If the app crashes, a stale `.voicebake-session` may remain. Requests then fail with a
 message in the dock; deleting the file or restarting the app fixes it.
 
+## Exporting your game
+
+`manifest.json` is not a Godot resource, so exports leave it out by default. Add it under
+Export > Resources > "Filters to export non-resource files/folders", for example
+`voice/*.json`. The audio files themselves are imported resources and export normally.
+If the manifest is missing at runtime, `VoiceBank` prints a warning saying so.
+
 ## Runtime: VoiceBank
 
 ```gdscript
@@ -56,5 +63,7 @@ if bank.has_line("mechanic", "mech_greet_01"):
 | `get_stream(voice, id)` | `AudioStream` or `null` |
 | `play(voice, id, player = null)` | the player used, or `null` |
 
-`get_stream` returns `null` until Godot has imported the file. Make sure the output folder is
+Scripts of your own can refer to the class by name (`VoiceBank`), or load the script directly
+with `preload("res://addons/voicebake/voice_bank.gd")` to avoid depending on the editor's
+class cache. `get_stream` returns `null` until Godot has imported the file. Make sure the output folder is
 not excluded from export.

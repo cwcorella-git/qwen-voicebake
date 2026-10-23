@@ -15,19 +15,36 @@ var _streams: Dictionary = {}
 
 
 ## Reads the manifest. Returns OK, or an Error code if the file is missing or invalid.
+## Entries that are not well formed are skipped with a warning.
 func load_manifest(path: String) -> Error:
 	_voices = {}
 	_streams = {}
 	_base_dir = path.get_base_dir()
 	if not FileAccess.file_exists(path):
+		push_warning(
+			"VoiceBank: manifest not found at %s. In an exported game, add the manifest to "
+			% path + "Export > Resources > Filters to export non-resource files (e.g. voice/*.json)."
+		)
 		return ERR_FILE_NOT_FOUND
 	var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(path))
-	if typeof(parsed) != TYPE_DICTIONARY:
+	if typeof(parsed) != TYPE_DICTIONARY or typeof(parsed.get("voices")) != TYPE_DICTIONARY:
+		push_warning("VoiceBank: %s is not a valid manifest." % path)
 		return ERR_PARSE_ERROR
-	var voices: Variant = (parsed as Dictionary).get("voices", {})
-	if typeof(voices) != TYPE_DICTIONARY:
-		return ERR_PARSE_ERROR
-	_voices = voices
+	var voices: Dictionary = parsed["voices"]
+	for voice: Variant in voices:
+		var lines: Variant = voices[voice]
+		if typeof(voice) != TYPE_STRING or typeof(lines) != TYPE_DICTIONARY:
+			push_warning("VoiceBank: skipping malformed voice %s" % str(voice))
+			continue
+		var clean: Dictionary = {}
+		for id: Variant in lines:
+			var entry: Variant = lines[id]
+			if typeof(id) != TYPE_STRING or typeof(entry) != TYPE_DICTIONARY \
+					or typeof(entry.get("path")) != TYPE_STRING:
+				push_warning("VoiceBank: skipping malformed line %s/%s" % [str(voice), str(id)])
+				continue
+			clean[id] = entry
+		_voices[voice] = clean
 	return OK
 
 

@@ -4,13 +4,14 @@ extends Node
 ## Bake the starter project into this folder first (set paths.out = "<this folder>/voice"),
 ## then run the scene. The voice and line id below come from the starter example.
 
+const VoiceBankScript := preload("res://addons/voicebake/voice_bank.gd")
 const MANIFEST := "res://voice/manifest.json"
 const VOICE := "mechanic"
 const LINE_ID := "mech_greet_01"
 
 
 func _ready() -> void:
-	var bank := VoiceBank.new()
+	var bank: VoiceBankScript = VoiceBankScript.new()
 	add_child(bank)
 	if bank.load_manifest(MANIFEST) != OK:
 		print("No manifest at %s. Bake some lines first." % MANIFEST)

@@ -1,11 +1,10 @@
-# VoiceBake example project
+# VoiceBake example scene
 
-A minimal Godot 4.3+ project that plays one baked line with `VoiceBank`.
+`main.tscn` and `main.gd` play one baked line through `VoiceBank`. The parent folder
+(`godot/`) is a Godot 4.3+ project with the addon already enabled; open it in Godot to try it.
 
-`addons/voicebake` here is a relative symlink to `../../addons/voicebake`. On Windows, or
-if the symlink is missing, copy `godot/addons/voicebake` into `godot/example/addons/`.
-To use the addon in your own game, copy `addons/voicebake` into your project's `addons/`
-folder and enable it under Project Settings > Plugins.
+To hear something, bake the starter project with its output folder set to `godot/voice`
+(`paths.out` in `voicebake.toml`), then run the project.
 
-To hear something, bake the starter project with its output folder set to
-`godot/example/voice`, then run `main.tscn`.
+To use the addon in your own game, copy `godot/addons/voicebake` into your project's
+`addons/` folder and enable it under Project Settings > Plugins.

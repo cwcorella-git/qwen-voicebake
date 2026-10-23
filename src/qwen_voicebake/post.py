@@ -53,6 +53,9 @@ def _normalize_loudness(wav: np.ndarray, sr: int, target: float) -> np.ndarray:
     return np.clip(out, -1.0, 1.0).astype(np.float32)
 
 
+WRITE_BLOCK_FRAMES = 4096
+
+
 def write_audio(path: str | os.PathLike[str], wav: np.ndarray, sr: int, fmt: str) -> None:
     """Atomically write wav as ogg (Vorbis) or wav (PCM_16)."""
     import soundfile as sf
@@ -65,6 +68,10 @@ def write_audio(path: str | os.PathLike[str], wav: np.ndarray, sr: int, fmt: str
     container, subtype = ("OGG", "VORBIS") if fmt == "ogg" else ("WAV", "PCM_16")
 
     def _w(tmp: str) -> None:
-        sf.write(tmp, wav, sr, format=container, subtype=subtype)
+        # Write in blocks: one large Vorbis write overflows the stack on Windows libsndfile.
+        channels = 1 if wav.ndim == 1 else wav.shape[1]
+        with sf.SoundFile(tmp, "w", sr, channels, subtype, format=container) as f:
+            for i in range(0, len(wav), WRITE_BLOCK_FRAMES):
+                f.write(wav[i : i + WRITE_BLOCK_FRAMES])
 
     atomic_write(Path(path), _w)

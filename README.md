@@ -51,6 +51,19 @@ voices.json        lines.json         tones (built-in + tones.toml)
             <out>/<voice>/<line id>.ogg + manifest.json
 ```
 
+## Samples
+
+These six clips come from baking `examples/starter` on an RTX 3080 Ti with the 1.7B models and default settings. They are unedited. Compare the two mechanic lines, then the two clerk lines, to hear the same voice in different tones. The clips are model output from Qwen3-TTS (Apache-2.0).
+
+| Voice | Tone | Route | Line | Clip |
+|---|---|---|---|---|
+| mechanic | warm | clone | Back again? Pull up a stool, the kettle is on. | [mech_greet_01.ogg](https://raw.githubusercontent.com/cwcorella-git/qwen-voicebake/main/docs/samples/mech_greet_01.ogg) |
+| mechanic | anger | clone | Put that down. It is not a toy. | [mech_warn_01.ogg](https://raw.githubusercontent.com/cwcorella-git/qwen-voicebake/main/docs/samples/mech_warn_01.ogg) |
+| clerk | nervous | clone | Oh, hello, sorry, I did not see you there. | [clerk_greet_01.ogg](https://raw.githubusercontent.com/cwcorella-git/qwen-voicebake/main/docs/samples/clerk_greet_01.ogg) |
+| clerk | panicked | clone | The records are gone, they are all gone! | [clerk_alarm_01.ogg](https://raw.githubusercontent.com/cwcorella-git/qwen-voicebake/main/docs/samples/clerk_alarm_01.ogg) |
+| clerk | relief | design (vocal) | \*sigh\* | [clerk_sigh_01.ogg](https://raw.githubusercontent.com/cwcorella-git/qwen-voicebake/main/docs/samples/clerk_sigh_01.ogg) |
+| announcer | radio | clone | Control to cargo bay, confirm the seal. | [ann_radio_01.ogg](https://raw.githubusercontent.com/cwcorella-git/qwen-voicebake/main/docs/samples/ann_radio_01.ogg) |
+
 ## Models
 
 | Model | Used for | Size |

@@ -21,7 +21,8 @@ tts = ["qwen-tts", "torch"]
 app = ["PySide6>=6.6"]
 loudness = ["pyloudnorm"]
 all = ["qwen-tts", "torch", "PySide6>=6.6", "pyloudnorm"]
-dev = ["pytest", "pytest-qt", "ruff"]
+dev = ["pytest", "ruff"]
+test-app = ["pytest-qt"]
 
 [project.scripts]
 voicebake = "qwen_voicebake.cli:main"

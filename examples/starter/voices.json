@@ -2,21 +2,21 @@
   "version": 1,
   "voices": {
     "mechanic": {
-      "instruct": "A gruff man in his sixties with a gravelly, low voice and a dry, unhurried manner; a ship's mechanic who has seen everything.",
+      "instruct": "A man in his sixties with a low, gravelly voice. Speaks slowly and dryly.",
       "ref_text": "Hand me that wrench, would you? The one with the green tape.",
       "seed": 1234,
       "temperature": null,
       "language": null
     },
     "clerk": {
-      "instruct": "A nervous young woman in her early twenties with a light, quick voice; an over-polite records clerk who apologizes too much.",
+      "instruct": "A young woman in her early twenties with a light, quick voice. Overly polite and apologetic.",
       "ref_text": "I am so sorry to bother you, but I think this form is the wrong one.",
       "seed": 1234,
       "temperature": null,
       "language": null
     },
     "announcer": {
-      "instruct": "A calm, neutral synthetic voice of a space station's automated announcer; smooth, precise, faintly warm, no human hesitation.",
+      "instruct": "A calm synthetic announcer voice. Smooth, precise and evenly paced.",
       "ref_text": "Good evening, and welcome aboard. Please keep all walkways clear.",
       "seed": 1234,
       "temperature": null,

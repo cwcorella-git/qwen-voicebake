@@ -179,3 +179,32 @@ def test_usage_error_exit_2():
     with pytest.raises(SystemExit) as e:
         cli.main(["bake", "--bogus"])
     assert e.value.code == 2
+
+
+def test_package_data_resources():
+    from importlib import resources
+
+    base = resources.files("qwen_voicebake")
+    assert base.joinpath("templates", "starter", "voicebake.toml").is_file()
+    assert base.joinpath("data", "common_words.txt").is_file()
+
+
+def test_refs_status_unknown_voice_is_usage_error(starter: Path):
+    assert cli.main(["refs", "status", "--voice", "ghost", "--project", str(starter)]) == 2
+
+
+def test_check_and_fake_bake_do_not_import_torch(starter: Path):
+    code = (
+        "import sys; from qwen_voicebake import cli; "
+        f"p = {str(starter)!r}; "
+        "assert cli.main(['check', '--project', p]) == 0; "
+        "assert cli.main(['bake', '--fake', '--project', p]) == 0; "
+        "assert 'torch' not in sys.modules"
+    )
+    subprocess.run([sys.executable, "-c", code], check=True, capture_output=True)
+
+
+def test_bake_help_documents_exit_codes(capsys):
+    with pytest.raises(SystemExit):
+        cli.main(["bake", "--help"])
+    assert "failed" in capsys.readouterr().out

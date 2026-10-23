@@ -222,6 +222,9 @@ def cmd_refs(args: argparse.Namespace) -> int:
     if action == "status":
         from .planner import route_for
 
+        if args.voice and args.voice not in voices:
+            raise CliError(f"unknown voice '{args.voice}'")
+
         lock = refs_mod.load_lock(project)
         pairs = sorted(
             {(ln.voice, ln.tone) for ln in lines if route_for(ln) == "clone" and ln.voice in voices}
@@ -317,7 +320,13 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--strict", action="store_true", help="warnings also fail")
     s.set_defaults(func=cmd_check)
 
-    s = sub.add_parser("bake", help="synthesize changed lines", parents=[common])
+    s = sub.add_parser(
+        "bake",
+        help="synthesize changed lines",
+        description="Synthesize changed lines. Exit codes: 0 ok; 1 check errors or failed "
+        "takes; 2 usage error; 3 project locked by another process.",
+        parents=[common],
+    )
     s.add_argument("--voices", help="comma-separated voice names")
     s.add_argument("--lines", help="comma-separated line id globs")
     s.add_argument("--force", action="store_true", help="re-bake lines that are up to date")

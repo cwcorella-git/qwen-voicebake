@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from .config import Project
     from .schema import Line, Voice
 
-USABLE_REF = ("ok", "pinned", "pinned-stale")
+USABLE_REF = ("ok", "modified", "pinned", "pinned-stale")
 
 
 def route_for(line: Line) -> str:

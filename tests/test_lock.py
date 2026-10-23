@@ -53,3 +53,10 @@ def test_old_heartbeat_reclaimed(tmp_path):
     finally:
         proc.kill()
         proc.wait()
+
+
+def test_fresh_create_is_exclusive(tmp_path):
+    a = ProjectLock(tmp_path, "a")
+    (tmp_path / ".voicebake").mkdir()
+    assert a._create() is True
+    assert ProjectLock(tmp_path, "b")._create() is False

@@ -82,16 +82,32 @@ class ProjectLock:
         self._thread: threading.Thread | None = None
         self.held = False
 
+    def _body(self) -> str:
+        return json.dumps({"pid": os.getpid(), "owner": self.owner, "heartbeat": time.time()})
+
     def _write(self) -> None:
-        body = {"pid": os.getpid(), "owner": self.owner, "heartbeat": time.time()}
-        atomic_write_text(self.path, json.dumps(body))
+        atomic_write_text(self.path, self._body())
+
+    def _create(self) -> bool:
+        """Create the lock file only if absent. Returns False if another process won."""
+        try:
+            fd = os.open(self.path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+        except FileExistsError:
+            return False
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(self._body())
+        return True
 
     def acquire(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        data = _read(self.path)
-        if data is not None and not _is_stale(data) and data.get("pid") != os.getpid():
-            raise LockHeld(data)
-        self._write()
+        if not self._create():
+            data = _read(self.path)
+            if data is None:  # being written by its creator right now; let it settle
+                time.sleep(0.2)
+                data = _read(self.path)
+            if data is not None and not _is_stale(data) and data.get("pid") != os.getpid():
+                raise LockHeld(data)
+            self._write()  # stale or ours: take it over
         self.held = True
         self._stop.clear()
         self._thread = threading.Thread(target=self._beat, name="voicebake-lock", daemon=True)

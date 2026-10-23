@@ -143,3 +143,74 @@ def test_regenerate_designs_missing_ref(bake_project):
     res = Baker(e, bake_project).regenerate("c_hi")
     assert res.ok
     assert [op for op, _ in e.calls] == ["design", "clone"]
+
+
+def test_regenerate_refuses_human_take(bake_project):
+    _bake(bake_project)
+    take = bake_project.paths.out / "mech" / "m_hello.ogg"
+    take.write_bytes(b"human audio")
+    (bake_project.paths.out / "mech" / "m_hello.ogg.human").write_text("")
+    e = FakeEngine()
+    res = Baker(e, bake_project).regenerate("m_hello")
+    assert not res.ok and "human" in res.error
+    assert take.read_bytes() == b"human audio" and e.calls == []
+
+
+def test_regenerate_records_seed(bake_project):
+    Baker(FakeEngine(), bake_project).regenerate("m_grunt", seed=99)
+    assert Ledger.for_root(bake_project.root).takes["mech/m_grunt.ogg"]["seed"] == 99
+
+
+def test_failed_ref_does_not_stop_bake(bake_project):
+    # clerk's reference text comes back empty: its ref fails, everything else bakes
+    s, _, events = _bake(bake_project, FakeEngine(fail={"Good morning to you.": "empty"}))
+    assert s.failed == ["c_hi"]
+    assert sorted(s.baked) == ["m_angry", "m_dir", "m_grunt", "m_hello"]
+    warn = [ev for ev in events if ev["type"] == "warn" and ev.get("failed")]
+    assert [(w["voice"], w["tone"]) for w in warn] == [("clerk", "nervous")]
+    take = next(ev for ev in events if ev["type"] == "take" and ev["line_id"] == "c_hi")
+    assert take["error"] == "reference missing"
+    assert not ref_path(bake_project, "clerk", "nervous").exists()
+
+
+def test_hard_qa_ref_rejected(bake_project):
+    s, _, _ = _bake(bake_project, FakeEngine(fail={"Good morning to you.": "runaway"}))
+    assert s.failed == ["c_hi"]
+    assert not ref_path(bake_project, "clerk", "nervous").exists()
+    assert (bake_project.state_dir / "rejected" / "refs" / "clerk" / "nervous.ogg").is_file()
+
+
+def test_engine_exception_in_ref_is_contained(bake_project):
+    class Boom(FakeEngine):
+        def design(self, text, *a, **k):
+            if text == "Good morning to you.":
+                raise RuntimeError("out of memory")
+            return super().design(text, *a, **k)
+
+    s, _, _ = _bake(bake_project, Boom())
+    assert s.failed == ["c_hi"] and len(s.baked) == 4
+
+
+def test_clone_prompt_cache_cleared_on_model_change(bake_project):
+    class Counting(FakeEngine):
+        prompts = 0
+
+        def make_clone_prompt(self, *a):
+            Counting.prompts += 1
+            return super().make_clone_prompt(*a)
+
+    _bake(bake_project)
+    lines = [dict(d) for d in SAMPLE_LINES]
+    lines[0]["text"] = "Changed one."
+    lines[0]["tone"] = "anger"
+    lines[1]["text"] = "Changed two."
+    write_lines(bake_project.root, lines)
+    e = Counting()
+    baker = Baker(e, bake_project)
+    baker.run(_plan(bake_project))
+    assert Counting.prompts == 1  # same ref, same loaded model: reused
+    e.load("other-model")
+    lines[0]["text"] = "Changed three."
+    write_lines(bake_project.root, lines)
+    baker.run(_plan(bake_project))
+    assert Counting.prompts == 2

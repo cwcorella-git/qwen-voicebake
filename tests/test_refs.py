@@ -65,3 +65,14 @@ def test_candidates_and_pick(bake_project):
     assert entry["seed"] == 42 and entry["pinned"] is True
     assert entry["audio_sha1"] == sha1_file(dst)
     assert _status(bake_project, "mech") == "pinned"
+
+
+def test_modified_ref_kept(bake_project):
+    e = FakeEngine()
+    refs.ensure_refs(e, bake_project, [("mech", "warm"), ("mech", "anger")])
+    rp = refs.ref_path(bake_project, "mech", "warm")
+    rp.write_bytes(refs.ref_path(bake_project, "mech", "anger").read_bytes())
+    assert _status(bake_project, "mech") == "modified"
+    assert refs.ensure_refs(e, bake_project, [("mech", "warm")]) == []
+    assert refs.ensure_refs(e, bake_project, [("mech", "warm")], force=True) == [("mech", "warm")]
+    assert _status(bake_project, "mech") == "ok"

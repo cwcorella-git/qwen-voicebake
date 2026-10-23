@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from .hashing import sha1_file
-from .ledger import Ledger, take_rel
+from .ledger import HUMAN_SUFFIX, Ledger, take_rel
 from .manifest import write_manifest
 from .planner import Job, Plan, expected_take_hash, route_for
 from .post import EmptyAudioError, postprocess, write_audio
@@ -60,6 +60,7 @@ class Baker:
         self.project = project
         self.on_event = on_event
         self._prompts: dict[tuple[str, str], Any] = {}
+        self._prompts_model: str | None = None
 
     @property
     def rejected_dir(self) -> Path:
@@ -79,12 +80,19 @@ class Baker:
 
         rp = ref_path(self.project, job.voice.name, job.line.tone)
         key = (self.project.engine.clone_model, sha1_file(rp))
+        assert self.engine is not None
+        # Prompts belong to a loaded model instance: drop them if the engine moved to another
+        # model since they were made, then make sure the clone model is loaded.
+        if self.engine.loaded_model != self._prompts_model:
+            self._prompts.clear()
+        self.engine.load(getattr(self.engine, "clone_model", self.project.engine.clone_model))
         if key not in self._prompts:
             wav, sr = sf.read(str(rp), dtype="float32", always_2d=False)
             if wav.ndim > 1:
                 wav = wav.mean(axis=1)
             assert self.engine is not None
             self._prompts[key] = self.engine.make_clone_prompt(wav, sr, job.voice.ref_text)
+            self._prompts_model = self.engine.loaded_model
         return self._prompts[key]
 
     def _synth(self, job: Job, seed: int) -> AudioResult:
@@ -136,7 +144,7 @@ class Baker:
             res.error = str(e)
             ledger.mark_failed(job.rel, res.error)
             return res
-        ledger.stamp(job.rel, h, job.route, qa.duration, qa.level, qa.reasons)
+        ledger.stamp(job.rel, h, job.route, qa.duration, qa.level, qa.reasons, seed=seed)
         res.ok = True
         return res
 
@@ -192,6 +200,7 @@ class Baker:
         pairs = [p for p in plan.ref_pairs if any((j.voice.name, j.line.tone) == p for j in clone)]
         total = len(jobs)
         done = 0
+        failed_refs: list[tuple[str, str]] = []
         try:
             # Design model: references, then design takes.
             if pairs and not cancel():
@@ -203,6 +212,7 @@ class Baker:
                     on_event=self.on_event,
                     voices=plan.voices,
                     tones=plan.tones,
+                    failed=failed_refs,
                 )
             for job in design + clone:
                 if cancel():
@@ -210,6 +220,8 @@ class Baker:
                     break
                 done += 1
                 h = expected_take_hash(self.project, job.line, job.voice, job.tone_text, job.route)
+                if job.route == "clone" and (job.voice.name, job.line.tone) in failed_refs:
+                    h = None
                 if h is None:
                     ledger.mark_failed(job.rel, "reference missing")
                     res = TakeResult(job.line.id, job.route, False, error="reference missing")
@@ -258,7 +270,20 @@ class Baker:
             else self.project.engine.max_new_tokens
         )
         job = Job(line, voice, tones[line.tone], route, take_rel(line, fmt), max_tokens, "")
+        out_file = self.project.paths.out / job.rel
+        if Path(str(out_file) + HUMAN_SUFFIX).exists():
+            res = TakeResult(
+                line.id,
+                route,
+                False,
+                rel=job.rel,
+                path=str(out_file),
+                error="line is marked as a human take; remove the .human marker to regenerate",
+            )
+            self._emit_take(res, 1, 1)
+            return res
         ledger = Ledger.for_root(self.project.root)
+        failed_refs: list[tuple[str, str]] = []
         if route == "clone":
             ensure_refs(
                 self.engine,
@@ -267,9 +292,10 @@ class Baker:
                 on_event=self.on_event,
                 voices=voices,
                 tones=tones,
+                failed=failed_refs,
             )
         h = expected_take_hash(self.project, line, voice, job.tone_text, route)
-        if h is None:
+        if h is None or failed_refs:
             res = TakeResult(line.id, route, False, error="reference missing")
         else:
             res = self._take(job, ledger, h, seed=seed)

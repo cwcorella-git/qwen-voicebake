@@ -57,6 +57,7 @@ class Ledger:
         duration: float,
         qa: str = "ok",
         qa_reasons: list[str] | None = None,
+        seed: int | None = None,
     ) -> None:
         self.takes[rel] = {
             "hash": h,
@@ -66,6 +67,8 @@ class Ledger:
             "qa_reasons": list(qa_reasons or []),
             "ts": time.time(),
         }
+        if seed is not None:
+            self.takes[rel]["seed"] = int(seed)
         self.failed.pop(rel, None)
 
     def mark_failed(self, rel: str, reason: str) -> None:

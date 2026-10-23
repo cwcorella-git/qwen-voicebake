@@ -43,8 +43,10 @@ def _to_mono(wav: Any) -> np.ndarray:
         wav = wav.detach().float().cpu().numpy()
     arr = np.asarray(wav, dtype=np.float32)
     if arr.ndim > 1:
-        arr = arr.reshape(-1) if 1 in arr.shape else arr.mean(axis=0)
-    return arr
+        arr = np.squeeze(arr)
+    if arr.ndim > 1:  # (channels, n) or (n, channels): average the shorter axis
+        arr = arr.mean(axis=int(np.argmin(arr.shape)))
+    return np.ascontiguousarray(arr, dtype=np.float32)
 
 
 class QwenEngine:
@@ -101,7 +103,7 @@ class QwenEngine:
         self.loaded_model = None
         self._prompts.clear()
         gc.collect()
-        if self._device == "cuda":
+        if self._device is not None and self._device.startswith("cuda"):
             import torch
 
             torch.cuda.empty_cache()

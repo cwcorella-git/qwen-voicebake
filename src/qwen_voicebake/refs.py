@@ -12,7 +12,8 @@ from typing import TYPE_CHECKING, Any
 
 from ._atomic import atomic_write, atomic_write_text
 from .hashing import ref_inputs_hash, sha1_file
-from .post import postprocess, write_audio
+from .post import EmptyAudioError, postprocess, write_audio
+from .qa import qa_check
 from .tones import instruct_for
 
 if TYPE_CHECKING:
@@ -70,7 +71,10 @@ def ref_status(
     tone_text: str,
     lock: dict[str, dict[str, Any]] | None = None,
 ) -> str:
-    """Return "missing", "ok", "stale", "pinned" or "pinned-stale".
+    """Return "missing", "modified", "ok", "stale", "pinned" or "pinned-stale".
+
+    "modified" means the file on disk differs from the one recorded in the lock (replaced by
+    hand); it is used as-is and only regenerated with force.
 
     A pinned reference is compared using the seed it was made with, so picking a candidate
     with a different seed does not by itself make it stale.
@@ -79,6 +83,10 @@ def ref_status(
     entry = lock.get(ref_key(voice.name, tone))
     if entry is None or not ref_path(project, voice.name, tone).is_file():
         return "missing"
+    if entry.get("audio_sha1") and entry["audio_sha1"] != sha1_file(
+        ref_path(project, voice.name, tone)
+    ):
+        return "modified"
     if entry.get("pinned"):
         seed = int(entry.get("seed", voice.seed))
         current = entry.get("inputs_hash") == _expected_hash(project, voice, tone, tone_text, seed)
@@ -131,11 +139,14 @@ def ensure_refs(
     on_event: Event = _noop,
     voices: dict[str, Voice] | None = None,
     tones: dict[str, str] | None = None,
+    failed: list[tuple[str, str]] | None = None,
 ) -> list[tuple[str, str]]:
     """Design references that are missing or stale (all unpinned ones when force).
 
     Pinned references are never regenerated; a pinned-stale one only emits a warning.
-    Returns the pairs that were (re)designed.
+    A reference that fails (engine error, empty or hard-QA audio) emits a warning, is appended
+    to failed (when given) and does not stop the others. Hard-QA audio goes to
+    .voicebake/rejected/refs/. Returns the pairs that were (re)designed.
     """
     voices, tones = _voices_tones(project, voices, tones)
     lock = load_lock(project)
@@ -155,10 +166,33 @@ def ensure_refs(
                 }
             )
             continue
-        if status == "pinned" or (status == "ok" and not force):
+        if status == "pinned" or (status in ("ok", "modified") and not force):
             continue
-        res, wav = _design_ref(engine, project, voice, tone_text, voice.seed)
-        write_audio(ref_path(project, vname, tone), wav, res.sr, REF_FORMAT)
+        try:
+            res, wav = _design_ref(engine, project, voice, tone_text, voice.seed)
+            qa = qa_check(wav, res.sr, voice.ref_text, "speech", project.qa)
+            if qa.level == "hard":
+                try:
+                    rej = project.state_dir / "rejected" / "refs" / vname / f"{tone}.{REF_FORMAT}"
+                    write_audio(rej, wav, res.sr, REF_FORMAT)
+                except EmptyAudioError:
+                    pass
+                raise RuntimeError("rejected: " + ", ".join(qa.reasons))
+            write_audio(ref_path(project, vname, tone), wav, res.sr, REF_FORMAT)
+        except Exception as e:  # noqa: BLE001 - one bad reference must not stop the bake
+            if failed is not None:
+                failed.append((vname, tone))
+            on_event(
+                {
+                    "type": "warn",
+                    "route": "design",
+                    "voice": vname,
+                    "tone": tone,
+                    "failed": True,
+                    "msg": f"reference failed: {type(e).__name__}: {e}",
+                }
+            )
+            continue
         _record(project, lock, voice, tone, tone_text, voice.seed, pinned=False)
         save_lock(project, lock)
         made.append((vname, tone))

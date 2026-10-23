@@ -31,3 +31,16 @@ def test_fake_bake_without_torch(bake_project):
         """
     )
     subprocess.run([sys.executable, "-c", code], check=True)
+
+
+def test_to_mono_channel_axis():
+    import numpy as np
+
+    from qwen_voicebake.engine.qwen import _to_mono
+
+    stereo_cf = np.stack([np.ones(100), np.zeros(100)])  # (2, n)
+    stereo_cl = stereo_cf.T  # (n, 2)
+    for arr in (stereo_cf, stereo_cl):
+        out = _to_mono(arr)
+        assert out.shape == (100,) and np.allclose(out, 0.5)
+    assert _to_mono(np.ones((1, 50))).shape == (50,)

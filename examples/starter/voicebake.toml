@@ -1,0 +1,25 @@
+# voicebake project file. Paths are relative to this file.
+
+[engine]
+design_model = "Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign"
+clone_model = "Qwen/Qwen3-TTS-12Hz-1.7B-Base"   # or Qwen/Qwen3-TTS-12Hz-0.6B-Base
+language = "English"
+temperature = 0.5
+device = "auto"          # auto | cuda | mps | cpu
+
+[paths]
+voices = "voices.json"
+lines = "lines.json"     # .json (editable) or .csv (read-only)
+scanner = ""             # set to "tools/example_scanner.py" to read lines from game/*.gd
+tones = "tones.toml"
+refs = "refs"
+out = "voice"            # usually inside your game project, e.g. "../my_game/voice"
+format = "ogg"           # ogg | wav
+normalize = false        # false, true (-18 LUFS) or a LUFS number
+
+[qa]
+max_seconds = 12.0
+min_seconds = 0.2
+
+[app]
+port = 47811

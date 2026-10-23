@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "lines": [
+    {"id": "mech_greet_01", "voice": "mechanic", "tone": "warm", "text": "Back again? Pull up a stool, the kettle is on.", "kind": "speech", "direction": ""},
+    {"id": "mech_warn_01", "voice": "mechanic", "tone": "anger", "text": "Put that down. It is not a toy.", "kind": "speech", "direction": ""},
+    {"id": "mech_grunt_01", "voice": "mechanic", "tone": "neutral", "text": "Hnngh!", "kind": "vocal", "direction": ""},
+    {"id": "mech_quip_01", "voice": "mechanic", "tone": "dry", "text": "Sure, the pumps are fine. They only leak on days ending in y.", "kind": "speech", "direction": ""},
+    {"id": "clerk_greet_01", "voice": "clerk", "tone": "nervous", "text": "Oh, hello, sorry, I did not see you there.", "kind": "speech", "direction": ""},
+    {"id": "clerk_alarm_01", "voice": "clerk", "tone": "panicked", "text": "The records are gone, they are all gone!", "kind": "speech", "direction": ""},
+    {"id": "clerk_sigh_01", "voice": "clerk", "tone": "relief", "text": "*sigh*", "kind": "vocal", "direction": ""},
+    {"id": "clerk_whisper_01", "voice": "clerk", "tone": "nervous", "text": "I think he can hear us from here.", "kind": "speech", "direction": "Whispering, glancing over a shoulder."},
+    {"id": "ann_dock_01", "voice": "announcer", "tone": "announcer", "text": "Attention. Docking will begin in three minutes.", "kind": "speech", "direction": ""},
+    {"id": "ann_radio_01", "voice": "announcer", "tone": "radio", "text": "Control to cargo bay, confirm the seal.", "kind": "speech", "direction": ""},
+    {"id": "ann_status_01", "voice": "announcer", "tone": "neutral", "text": "All systems are operating normally.", "kind": "speech", "direction": ""},
+    {"id": "ann_night_01", "voice": "announcer", "tone": "warm", "text": "Lights will dim shortly. Rest well.", "kind": "speech", "direction": ""}
+  ]
+}
